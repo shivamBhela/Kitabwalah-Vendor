@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react'
-import type { Product } from '../../types'
+import type { ReactNode, CSSProperties } from 'react'
+import type { ProductView } from '../../types'
 
 // ─── Brand ────────────────────────────────────────────────────────────────────
 
@@ -45,11 +45,12 @@ type CardProps = {
   action?: ReactNode
   children?: ReactNode
   className?: string
+  style?: CSSProperties
 }
 
-export function Card({ title, subtitle, action, children, className = '' }: CardProps) {
+export function Card({ title, subtitle, action, children, className = '', style }: CardProps) {
   return (
-    <section className={`card ${className}`}>
+    <section className={`card ${className}`} style={style}>
       {(title || action) && (
         <div className="card-head">
           <div>
@@ -88,28 +89,33 @@ export function Metric({ label, value, trend, alert }: MetricProps) {
 // ─── Badge ────────────────────────────────────────────────────────────────────
 
 export function Badge({ value }: { value: string }) {
+  const display = value ? value.replaceAll('_', ' ') : 'N/A'
   return (
-    <span className={`badge ${value.toLowerCase().replaceAll(' ', '-')}`}>
-      {value}
+    <span className={`badge ${display.toLowerCase().replaceAll(' ', '-')}`}>
+      {display}
     </span>
   )
 }
 
 // ─── Book Thumbnail ───────────────────────────────────────────────────────────
 
-export function Book({ product }: { product: Product }) {
+export function Book({ product }: { product: ProductView }) {
+  const title = product.title || 'Book'
+  const imageUrl = product.images?.[0]?.imageUrl
+  const bgColor = '#467364'
+
   return (
     <span
       className="book"
       style={{
-        background: product.color,
-        backgroundImage: product.image ? `url(${product.image})` : undefined,
+        background: bgColor,
+        backgroundImage: imageUrl ? `url(${imageUrl})` : undefined,
         backgroundSize: 'cover',
         backgroundPosition: 'center',
       }}
     >
-      {!product.image &&
-        product.name
+      {!imageUrl &&
+        title
           .split(' ')
           .slice(0, 2)
           .map((word, i) => <span key={i}>{word}</span>)}
@@ -119,9 +125,9 @@ export function Book({ product }: { product: Product }) {
 
 // ─── Stock Indicator ──────────────────────────────────────────────────────────
 
-type StockProps = { stock: number; threshold: number }
+type StockProps = { stock: number; threshold?: number }
 
-export function Stock({ stock, threshold }: StockProps) {
+export function Stock({ stock, threshold = 10 }: StockProps) {
   const className =
     stock === 0 ? 'stock out' : stock <= threshold ? 'stock low' : 'stock'
   const label =
@@ -136,10 +142,11 @@ export function Stock({ stock, threshold }: StockProps) {
 // ─── Star Rating ──────────────────────────────────────────────────────────────
 
 export function Stars({ rating }: { rating: number }) {
+  const safeRating = Math.min(5, Math.max(0, Math.round(rating)))
   return (
     <span className="stars">
-      {'★'.repeat(rating)}
-      <i>{'★'.repeat(5 - rating)}</i>
+      {'★'.repeat(safeRating)}
+      <i>{'★'.repeat(5 - safeRating)}</i>
     </span>
   )
 }
@@ -200,14 +207,16 @@ export function Field({
       </span>
       {textarea ? (
         <textarea
-          value={value}
+          value={value ?? ''}
           onChange={(e) => onChange?.(e.target.value)}
           placeholder={placeholder}
         />
       ) : select ? (
-        <select value={value} onChange={(e) => onChange?.(e.target.value)}>
+        <select value={value ?? ''} onChange={(e) => onChange?.(e.target.value)}>
           {options?.map((o) => (
-            <option key={o}>{o}</option>
+            <option key={o} value={o}>
+              {o}
+            </option>
           ))}
         </select>
       ) : (
@@ -215,7 +224,7 @@ export function Field({
           {prefix && <i>{prefix}</i>}
           <input
             type={type}
-            value={value}
+            value={value ?? ''}
             onChange={(e) => onChange?.(e.target.value)}
             placeholder={placeholder}
           />
@@ -268,16 +277,25 @@ export function Empty({ title, text, action, onClick }: EmptyProps) {
 
 // ─── Pagination ───────────────────────────────────────────────────────────────
 
-export function Pagination({ label }: { label: string }) {
+type PaginationProps = {
+  label: string
+  page?: number
+  totalPages?: number
+  onPageChange?: (p: number) => void
+}
+
+export function Pagination({ label, page = 1, totalPages = 1, onPageChange }: PaginationProps) {
   return (
     <div className="pagination">
       <span>{label}</span>
       <div>
-        <button disabled>←</button>
-        <button className="selected">1</button>
-        <button>2</button>
-        <button>3</button>
-        <button>→</button>
+        <button disabled={page <= 1} onClick={() => onPageChange?.(page - 1)}>
+          ←
+        </button>
+        <button className="selected">{page}</button>
+        <button disabled={page >= totalPages} onClick={() => onPageChange?.(page + 1)}>
+          →
+        </button>
       </div>
     </div>
   )

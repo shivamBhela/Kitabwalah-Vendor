@@ -1,33 +1,64 @@
-import { Card, Metric, PageHeader, Empty } from '../components/ui'
+import { Card, Metric, PageHeader, Empty, Book } from '../components/ui'
 import { OrderTable } from '../components/shared'
 import { RevenueChart } from '../components/charts'
-import { Book } from '../components/ui'
 import { currency } from '../lib/data'
-import { ORDER_STATUSES } from '../lib/constants'
-import type { AppData, Order, Page } from '../types'
+import type {
+  VendorProfileView,
+  VendorOrder,
+  ProductView,
+  VendorEarningsView,
+  WithdrawalBalance,
+  Page,
+} from '../types'
 
 type DashboardProps = {
-  data: AppData
+  profile: VendorProfileView | null
+  earnings: VendorEarningsView | null
+  withdrawalBalance: WithdrawalBalance | null
+  orders: VendorOrder[]
+  products: ProductView[]
   go: (p: Page) => void
-  openOrder: (o: Order) => void
+  openOrder: (o: VendorOrder) => void
 }
 
-export function Dashboard({ data, go, openOrder }: DashboardProps) {
-  const lowStock = data.products.filter((p) => p.stock <= p.threshold)
-  const newOrders = data.orders.filter((o) => o.status === 'New').length
-  const totalSalesAmount = data.orders
-    .filter((o) => o.status === 'Delivered')
-    .reduce((sum, o) => sum + o.amount, 0)
-  const todaysOrdersCount = data.orders.filter(
-    (o) => o.date.includes('Today') || o.date.includes('Sep 06')
+const ORDER_STATUSES = [
+  'confirmed',
+  'processing',
+  'ready_for_dispatch',
+  'dispatched',
+  'delivered',
+  'returned',
+]
+
+export function Dashboard({
+  profile,
+  earnings,
+  withdrawalBalance,
+  orders,
+  products,
+  go,
+  openOrder,
+}: DashboardProps) {
+  const lowStock = products.filter((p) => p.stockQuantity <= 10)
+  const pendingOrders = orders.filter((o) =>
+    ['confirmed', 'processing', 'pending'].includes(
+      (o.vendorStatus || o.orderStatus || '').toLowerCase()
+    )
   ).length
+
+  const grossSales = earnings?.live?.grossSales || '0.00'
+  const availableBalance = withdrawalBalance?.availableToWithdraw || '0.00'
+  const totalProducts = profile?.totalProducts ?? products.length
+
+  const todayStr = new Date().toISOString().split('T')[0]
+  const todaysOrdersCount = orders.filter((o) => o.placedAt && o.placedAt.startsWith(todayStr)).length
 
   return (
     <>
       <PageHeader
         crumb="Overview"
         title="Dashboard Overview"
-        desc="Here's how your store is performing."
+        desc={profile?.storeName ? `Welcome back, ${profile.storeName}.` : "Here's how your store is performing."}
         action={
           <button className="button" onClick={() => go('Products')}>
             + Add product
@@ -37,12 +68,12 @@ export function Dashboard({ data, go, openOrder }: DashboardProps) {
 
       {/* ── KPI Metrics ── */}
       <div className="metric-grid">
-        <Metric label="Total sales" value={currency(totalSalesAmount)} trend="Delivered orders revenue" />
+        <Metric label="Gross sales" value={currency(grossSales)} trend="Live revenue" />
         <Metric label="Today's orders" value={String(todaysOrdersCount)} trend="Placed today" />
-        <Metric label="Pending orders" value={String(newOrders)} alert="Needs your attention" />
-        <Metric label="Total products" value={String(data.products.length)} trend="All catalog items" />
-        <Metric label="Low stock" value={String(lowStock.length)} alert="Restock soon" />
-        <Metric label="Available balance" value={currency(data.availableBalance)} trend="Ready to withdraw" />
+        <Metric label="Pending orders" value={String(pendingOrders)} alert={pendingOrders > 0 ? "Needs action" : undefined} />
+        <Metric label="Total products" value={String(totalProducts)} trend="In catalog" />
+        <Metric label="Low stock" value={String(lowStock.length)} alert={lowStock.length > 0 ? "Restock soon" : undefined} />
+        <Metric label="Available balance" value={currency(availableBalance)} trend="Ready to withdraw" />
       </div>
 
       {/* ── Sales Chart + Order Overview ── */}
@@ -52,29 +83,31 @@ export function Dashboard({ data, go, openOrder }: DashboardProps) {
             <button className="selected">30 Days</button>
             <button>7 Days</button>
             <button>3 Months</button>
-            <button>Custom</button>
           </div>
           <RevenueChart />
           <div className="chart-legend">
             <span>
               <i className="green-dot" />
-              Revenue <b>{currency(totalSalesAmount)}</b>
+              Revenue <b>{currency(grossSales)}</b>
             </span>
-            <span>Orders <b>{data.orders.length}</b></span>
+            <span>Orders <b>{orders.length}</b></span>
           </div>
         </Card>
 
         <Card title="Order overview" subtitle="Across all orders">
           <div className="order-overview">
-            {ORDER_STATUSES.map((s, i) => (
-              <button key={s} onClick={() => go('Orders')}>
-                <strong>
-                  {data.orders.filter((o) => o.status === s).length}
-                </strong>
-                <span className={`status-dot d${i}`} />
-                {s}
-              </button>
-            ))}
+            {ORDER_STATUSES.map((s, i) => {
+              const count = orders.filter(
+                (o) => (o.vendorStatus || o.orderStatus || '').toLowerCase() === s
+              ).length
+              return (
+                <button key={s} onClick={() => go('Orders')}>
+                  <strong>{count}</strong>
+                  <span className={`status-dot d${i}`} />
+                  {s.replaceAll('_', ' ')}
+                </button>
+              )
+            })}
           </div>
         </Card>
       </div>
@@ -83,7 +116,7 @@ export function Dashboard({ data, go, openOrder }: DashboardProps) {
       <div className="split-grid">
         <Card
           title="Top products"
-          subtitle="By revenue this month"
+          subtitle="Catalog items"
           action={
             <button className="text-button" onClick={() => go('Products')}>
               View all
@@ -91,19 +124,19 @@ export function Dashboard({ data, go, openOrder }: DashboardProps) {
           }
         >
           <div className="product-rank">
-            {data.products.length ? (
-              data.products.slice(0, 4).map((p) => (
+            {products.length ? (
+              products.slice(0, 4).map((p) => (
                 <div key={p.id}>
                   <Book product={p} />
                   <span className="rank-name">
-                    <b>{p.name}</b>
-                    <small>0 units sold</small>
+                    <b>{p.title}</b>
+                    <small>SKU: {p.sku}</small>
                   </span>
-                  <strong>{currency(p.price)}</strong>
+                  <strong>{currency(p.regularPrice)}</strong>
                 </div>
               ))
             ) : (
-              <Empty title="No products in catalog" text="Add products to start tracking top items." />
+              <Empty title="No products in catalog" text="Add products to start selling." />
             )}
           </div>
         </Card>
@@ -113,74 +146,39 @@ export function Dashboard({ data, go, openOrder }: DashboardProps) {
             <button onClick={() => go('Orders')}>
               <span className="action-icon orange">▤</span>
               <span>
-                <b>{newOrders} new orders</b>
-                <small>Requires action</small>
+                <b>{pendingOrders} orders requiring action</b>
+                <small>Confirm or process items</small>
               </span>
               <i>›</i>
             </button>
             <button onClick={() => go('Inventory')}>
               <span className="action-icon red">!</span>
               <span>
-                <b>{lowStock.length} products need restocking</b>
+                <b>{lowStock.length} products low on stock</b>
                 <small>Prevent missed sales</small>
               </span>
               <i>›</i>
             </button>
-            <button onClick={() => go('Returns')}>
-              <span className="action-icon blue">↶</span>
-              <span>
-                <b>0 return requests</b>
-                <small>Review customer requests</small>
-              </span>
-              <i>›</i>
-            </button>
           </div>
         </Card>
       </div>
 
-      {/* ── Recent Orders + Reviews ── */}
-      <div className="split-grid">
-        <Card
-          title="Recent orders"
-          subtitle="Latest activity"
-          action={
-            <button className="text-button" onClick={() => go('Orders')}>
-              View all orders
-            </button>
-          }
-        >
-          {data.orders.length ? (
-            <OrderTable orders={data.orders.slice(0, 4)} onOpen={openOrder} />
-          ) : (
-            <Empty title="No recent orders" text="Orders will appear here when placed." />
-          )}
-        </Card>
-
-        <Card
-          title="Recent reviews"
-          subtitle="What customers are saying"
-          action={
-            <button className="text-button" onClick={() => go('Reviews')}>
-              Manage reviews
-            </button>
-          }
-        >
-          <div className="review-list">
-            {data.reviews.length ? (
-              data.reviews.slice(0, 3).map((r) => (
-                <div key={r.id}>
-                  <p>"{r.text}"</p>
-                  <small>
-                    <b>{r.customer}</b> · {r.product}
-                  </small>
-                </div>
-              ))
-            ) : (
-              <Empty title="No reviews yet" text="Customer reviews will be shown here." />
-            )}
-          </div>
-        </Card>
-      </div>
+      {/* ── Recent Orders ── */}
+      <Card
+        title="Recent orders"
+        subtitle="Latest activity"
+        action={
+          <button className="text-button" onClick={() => go('Orders')}>
+            View all orders
+          </button>
+        }
+      >
+        {orders.length ? (
+          <OrderTable orders={orders.slice(0, 4)} onOpen={openOrder} />
+        ) : (
+          <Empty title="No recent orders" text="Orders will appear here when customers purchase your books." />
+        )}
+      </Card>
     </>
   )
 }

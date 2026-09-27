@@ -1,13 +1,12 @@
-import { currency } from '../../lib/data'
-import { ORDER_STATUSES } from '../../lib/constants'
+import { currency, toDate } from '../../lib/data'
 import { Badge, Book } from '../ui'
-import type { Order, Product, Status } from '../../types'
+import type { VendorOrder, ProductView } from '../../types'
 
 // ─── Order Table ──────────────────────────────────────────────────────────────
 
 type OrderTableProps = {
-  orders: Order[]
-  onOpen: (o: Order) => void
+  orders: VendorOrder[]
+  onOpen: (o: VendorOrder) => void
   full?: boolean
 }
 
@@ -32,35 +31,45 @@ export function OrderTable({ orders, onOpen, full = false }: OrderTableProps) {
           </tr>
         </thead>
         <tbody>
-          {orders.map((o) => (
-            <tr key={o.id}>
-              <td>
-                <button className="link" onClick={() => onOpen(o)}>
-                  {o.id}
-                </button>
-                <small>{o.date}</small>
-              </td>
-              <td>{o.customer}</td>
-              <td>{o.product}</td>
-              {full && (
-                <>
-                  <td>{o.quantity}</td>
-                  <td>{o.payment}</td>
-                </>
-              )}
-              <td>
-                <b>{currency(o.amount)}</b>
-              </td>
-              <td>
-                <Badge value={o.status} />
-              </td>
-              <td>
-                <button className="table-button" onClick={() => onOpen(o)}>
-                  View
-                </button>
-              </td>
-            </tr>
-          ))}
+          {orders.map((o) => {
+            const customerName = o.shipTo?.name || 'Customer'
+            const firstItem = o.items?.[0]
+            const productName = firstItem?.productName || 'Order Items'
+            const quantity = firstItem?.quantity || 1
+            const paymentType = o.isCod ? 'COD' : o.paymentMethod || 'Paid'
+            const status = o.vendorStatus || o.orderStatus || 'pending'
+            const amount = o.vendorEarning || o.vendorSubtotal || '0.00'
+
+            return (
+              <tr key={o.orderId}>
+                <td>
+                  <button className="link" onClick={() => onOpen(o)}>
+                    {o.orderNumber || `#${o.orderId}`}
+                  </button>
+                  <small>{toDate(o.placedAt)}</small>
+                </td>
+                <td>{customerName}</td>
+                <td>{productName}</td>
+                {full && (
+                  <>
+                    <td>{quantity}</td>
+                    <td>{paymentType}</td>
+                  </>
+                )}
+                <td>
+                  <b>{currency(amount)}</b>
+                </td>
+                <td>
+                  <Badge value={status} />
+                </td>
+                <td>
+                  <button className="table-button" onClick={() => onOpen(o)}>
+                    View
+                  </button>
+                </td>
+              </tr>
+            )
+          })}
         </tbody>
       </table>
     </div>
@@ -69,15 +78,18 @@ export function OrderTable({ orders, onOpen, full = false }: OrderTableProps) {
 
 // ─── Order Timeline ───────────────────────────────────────────────────────────
 
-export function Timeline({ status }: { status: Status }) {
-  const at = ORDER_STATUSES.indexOf(status)
+const STAGES = ['confirmed', 'processing', 'ready_for_dispatch', 'dispatched', 'delivered']
+
+export function Timeline({ status }: { status: string }) {
+  const normalizedStatus = status ? status.toLowerCase() : ''
+  const at = STAGES.indexOf(normalizedStatus)
   return (
     <div className="timeline">
-      {ORDER_STATUSES.slice(0, 5).map((s, i) => (
+      {STAGES.map((s, i) => (
         <div key={s} className={i <= at ? 'complete' : ''}>
           <i>{i < at ? '✓' : i === at ? '●' : '○'}</i>
           <span>
-            <b>{s}</b>
+            <b>{s.replaceAll('_', ' ')}</b>
             <small>{i < at ? 'Completed' : i === at ? 'Current status' : 'Pending'}</small>
           </span>
         </div>
@@ -89,18 +101,18 @@ export function Timeline({ status }: { status: Status }) {
 // ─── Book Rank Row ────────────────────────────────────────────────────────────
 
 type BookRankRowProps = {
-  product: Product
+  product: ProductView
   unitsSold: number
-  revenue: number
+  revenue: string | number
   rank: number
 }
 
-export function BookRankRow({ product, unitsSold, revenue, rank }: BookRankRowProps) {
+export function BookRankRow({ product, unitsSold, revenue }: BookRankRowProps) {
   return (
     <div>
       <Book product={product} />
       <span className="rank-name">
-        <b>{product.name}</b>
+        <b>{product.title}</b>
         <small>{unitsSold} units sold</small>
       </span>
       <strong>{currency(revenue)}</strong>
